@@ -1,0 +1,36 @@
+CREATE VIEW EventAttendeeView AS
+SELECT e.id AS event_id,
+       e.name AS event_name,
+       e.date AS event_date,
+       a.id AS attendee_id,
+       a.firstName AS attendee_first_name,
+       a.lastName AS attendee_last_name,
+       a.email AS attendee_email
+FROM event e
+JOIN event_attendee ea ON e.id = ea.event_id
+JOIN attendee a ON a.id = ea.attendee_id;
+
+DELIMITER //
+
+CREATE PROCEDURE RegisterAttendeeToEvent(
+    IN p_eventId BIGINT,
+    IN p_attendeeId BIGINT
+)
+BEGIN
+    -- Check if event exists
+    IF NOT EXISTS (SELECT 1 FROM event WHERE id = p_eventId) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Event not found';
+    END IF;
+
+    -- Check if attendee exists
+    IF NOT EXISTS (SELECT 1 FROM attendee WHERE id = p_attendeeId) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Attendee not found';
+    END IF;
+
+    -- Insert into event_attendee table
+    INSERT INTO event_attendee (event_id, attendee_id)
+    VALUES (p_eventId, p_attendeeId);
+END //
+
+DELIMITER ;
+
