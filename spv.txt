@@ -1,29 +1,138 @@
-When AWS Schema Conversion Tool (SCT) creates a schema with the table name instead of converting tables, it could be due to a misconfiguration in the project or an unsupported schema structure between SQL Server and MySQL. Here’s how you can troubleshoot and resolve this issue:
+Possible Causes for CDC Failures
 
-### Steps to Resolve the Issue
+1. Log Retention Issue:
 
-1. **Check Schema Mapping in SCT**
-   - Go to the SCT project settings and check the **schema mapping**. Make sure that the mapping aligns with your target MySQL schema structure.
-   - Ensure that SCT is mapping your SQL Server schema to an actual schema name (like `dbo`) in MySQL rather than creating a new schema for each table.
+If the transaction log has been truncated or overwritten before CDC processes the changes, it can cause failures.
 
-2. **Review Source Database Structure**
-   - Verify that your SQL Server database tables are organized under the expected schema (e.g., `dbo`). If the tables are outside of the default schema or have non-standard configurations, SCT may misinterpret them.
 
-3. **Adjust the Target Schema Settings**
-   - In SCT, click on the **Target Schema** settings for each table or schema and ensure that it’s set to create tables within the desired MySQL schema.
-   - Double-check that the target schema is set to an existing schema name or a new schema name where you want the tables created (e.g., `employees` instead of defaulting to table names).
 
-4. **Re-Run Schema Conversion**
-   - After adjusting the schema mapping, re-run the **Convert Schema** action.
-   - Review the generated schema in the SCT interface before applying it to MySQL to ensure it’s producing tables rather than individual schemas.
+2. Permission Problems:
 
-5. **Generate and Review SQL Script**
-   - Rather than applying the schema directly, use SCT to **generate an SQL script** for the schema conversion.
-   - Open the script and verify that it contains `CREATE TABLE` statements in the correct schema rather than `CREATE SCHEMA` statements with table names.
-   - Manually adjust the script if needed before executing it on your MySQL database.
+The CDC process might lack the necessary permissions to access or process the logs.
 
-6. **Manual Adjustments if Necessary**
-   - If SCT still misinterprets the schema, you can export the schema as SQL and manually edit it to remove any unintended `CREATE SCHEMA` statements.
-   - Then, manually execute the corrected script in MySQL.
 
-These steps should help guide SCT to convert your tables correctly.
+
+3. Schema Changes:
+
+Recent changes to the schema of the source tables (e.g., adding/dropping columns) may break the CDC process.
+
+
+
+4. Capture/Job Agent Issues:
+
+The CDC capture or cleanup jobs may have stopped or failed.
+
+
+
+5. Metadata Corruption:
+
+Corruption in CDC system tables or tracking metadata can cause failures.
+
+
+
+6. Resource Constraints:
+
+CDC may fail due to insufficient resources, such as memory or I/O capacity.
+
+
+
+7. Configuration Issue:
+
+CDC may not be properly configured on the source database or target system.
+
+
+
+
+
+---
+
+Troubleshooting Steps
+
+1. Check Logs:
+
+Review the CDC-specific logs and error details for more information about the failure.
+
+
+
+2. Verify CDC Jobs:
+
+Ensure the CDC jobs (capture and cleanup) are running successfully:
+
+For SQL Server, check the SQL Server Agent jobs for CDC (e.g., cdc.<database_name>_capture).
+
+
+
+
+3. Validate Log Retention:
+
+Ensure the transaction log has sufficient retention to accommodate CDC.
+
+Use the sys.sp_cdc_help_change_data_capture stored procedure to check log sequence number (LSN) ranges.
+
+Increase log file size if needed.
+
+
+
+
+4. Check Permissions:
+
+Verify that the user account running the CDC process has:
+
+Access to the transaction logs.
+
+Appropriate database roles (e.g., db_owner or db_datareader).
+
+
+
+
+5. Test with Manual Capture:
+
+Run manual CDC queries to verify data capture:
+
+SELECT * 
+FROM cdc.fn_cdc_get_all_changes_<capture_instance>(@from_lsn, @to_lsn, 'all');
+
+
+
+6. Monitor Schema Changes:
+
+If schema changes occurred, recreate the CDC instance or resynchronize.
+
+
+
+7. System Resource Check:
+
+Verify there are no memory or disk I/O bottlenecks on the server.
+
+
+
+8. Reinitialize CDC:
+
+As a last resort, disable and re-enable CDC for the affected table or database:
+
+EXEC sys.sp_cdc_disable_table @source_schema = 'schema_name', @source_name = 'table_name';
+EXEC sys.sp_cdc_enable_table @source_schema = 'schema_name', @source_name = 'table_name', @role_name = NULL;
+
+
+
+
+
+---
+
+Specific Diagnostic Queries
+
+Check CDC configuration:
+
+SELECT * FROM sys.change_data_capture_tables;
+
+Check for capture job errors:
+
+EXEC sys.sp_cdc_help_jobs;
+
+Verify LSN range:
+
+SELECT * FROM sys.fn_cdc_get_max_lsn();
+
+
+
+---
