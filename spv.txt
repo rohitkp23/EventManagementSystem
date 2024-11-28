@@ -1,138 +1,151 @@
-Possible Causes for CDC Failures
-
-1. Log Retention Issue:
-
-If the transaction log has been truncated or overwritten before CDC processes the changes, it can cause failures.
+The issue occurs because SQL Server uses schemas (like dbo), while MySQL treats schemas as databases. When you migrate a SQL Server database using AWS DMS (or similar tools), the default schema (dbo) is being interpreted as a database name in MySQL, which is why you're seeing a dbo database created on the target.
 
 
+---
 
-2. Permission Problems:
+Why This Happens
 
-The CDC process might lack the necessary permissions to access or process the logs.
+SQL Server: Uses schemas to logically group tables within a single database.
 
-
-
-3. Schema Changes:
-
-Recent changes to the schema of the source tables (e.g., adding/dropping columns) may break the CDC process.
+Example: A table named dbo.Employees in SQL Server is stored within the dbo schema of a database, e.g., MyDatabase.
 
 
-
-4. Capture/Job Agent Issues:
-
-The CDC capture or cleanup jobs may have stopped or failed.
+MySQL: Does not support schemas in the same way. Instead, each schema in SQL Server is typically translated into a separate MySQL database.
 
 
-
-5. Metadata Corruption:
-
-Corruption in CDC system tables or tracking metadata can cause failures.
+By default, AWS DMS and other migration tools interpret dbo (or other schema names) as a new database unless explicitly mapped otherwise.
 
 
+---
 
-6. Resource Constraints:
+Fixes for the Issue
 
-CDC may fail due to insufficient resources, such as memory or I/O capacity.
+1. Map Schema to Target Database
+
+To avoid creating a dbo database in MySQL, you need to explicitly map the schema to the target database. This can be done using the schema mapping settings in your migration task.
+
+Updated Schema Mapping
+
+In the DMS task, modify the schema mappings to direct all tables under dbo into a specific database (e.g., target_database_name):
+
+{
+  "rules": [
+    {
+      "rule-type": "selection",
+      "rule-id": "1",
+      "rule-name": "1",
+      "object-locator": {
+        "schema-name": "dbo",
+        "table-name": "%"
+      },
+      "rule-action": "include"
+    },
+    {
+      "rule-type": "transformation",
+      "rule-id": "2",
+      "rule-name": "2",
+      "rule-target": "schema",
+      "object-locator": {
+        "schema-name": "dbo"
+      },
+      "rule-action": "rename",
+      "value": "target_database_name"
+    }
+  ]
+}
+
+Rule 1: Includes all tables in the dbo schema.
+
+Rule 2: Maps the dbo schema to the desired target database name in MySQL.
 
 
 
-7. Configuration Issue:
+---
 
-CDC may not be properly configured on the source database or target system.
+2. Use Wildcard for Multiple Schemas
 
+If your SQL Server database has multiple schemas (e.g., dbo, hr, sales), map all schemas to the same MySQL database:
+
+{
+  "rules": [
+    {
+      "rule-type": "selection",
+      "rule-id": "1",
+      "rule-name": "1",
+      "object-locator": {
+        "schema-name": "%",
+        "table-name": "%"
+      },
+      "rule-action": "include"
+    },
+    {
+      "rule-type": "transformation",
+      "rule-id": "2",
+      "rule-name": "2",
+      "rule-target": "schema",
+      "object-locator": {
+        "schema-name": "%"
+      },
+      "rule-action": "rename",
+      "value": "target_database_name"
+    }
+  ]
+}
+
+
+---
+
+3. Combine All Schemas into One Database
+
+If you prefer to merge all schemas into a single MySQL database (e.g., MyDatabase), use the following:
+
+{
+  "rules": [
+    {
+      "rule-type": "selection",
+      "rule-id": "1",
+      "rule-name": "1",
+      "object-locator": {
+        "schema-name": "%",
+        "table-name": "%"
+      },
+      "rule-action": "include"
+    },
+    {
+      "rule-type": "transformation",
+      "rule-id": "2",
+      "rule-name": "2",
+      "rule-target": "schema",
+      "object-locator": {
+        "schema-name": "%"
+      },
+      "rule-action": "rename",
+      "value": "MyDatabase"
+    }
+  ]
+}
+
+
+---
+
+4. Verify Results
+
+After updating the task:
+
+1. Run the migration task and check the target MySQL database to ensure all tables are created in the desired database (e.g., MyDatabase) instead of a dbo database.
+
+
+2. If the mapping is correct, tables like dbo.Employees in SQL Server should appear as MyDatabase.Employees in MySQL.
 
 
 
 
 ---
 
-Troubleshooting Steps
+Testing
 
-1. Check Logs:
-
-Review the CDC-specific logs and error details for more information about the failure.
+Before running the migration on the full database, test it with a smaller subset of tables to verify that schema mapping works as expected.
 
 
+Let me know if you encounter further issues!
 
-2. Verify CDC Jobs:
-
-Ensure the CDC jobs (capture and cleanup) are running successfully:
-
-For SQL Server, check the SQL Server Agent jobs for CDC (e.g., cdc.<database_name>_capture).
-
-
-
-
-3. Validate Log Retention:
-
-Ensure the transaction log has sufficient retention to accommodate CDC.
-
-Use the sys.sp_cdc_help_change_data_capture stored procedure to check log sequence number (LSN) ranges.
-
-Increase log file size if needed.
-
-
-
-
-4. Check Permissions:
-
-Verify that the user account running the CDC process has:
-
-Access to the transaction logs.
-
-Appropriate database roles (e.g., db_owner or db_datareader).
-
-
-
-
-5. Test with Manual Capture:
-
-Run manual CDC queries to verify data capture:
-
-SELECT * 
-FROM cdc.fn_cdc_get_all_changes_<capture_instance>(@from_lsn, @to_lsn, 'all');
-
-
-
-6. Monitor Schema Changes:
-
-If schema changes occurred, recreate the CDC instance or resynchronize.
-
-
-
-7. System Resource Check:
-
-Verify there are no memory or disk I/O bottlenecks on the server.
-
-
-
-8. Reinitialize CDC:
-
-As a last resort, disable and re-enable CDC for the affected table or database:
-
-EXEC sys.sp_cdc_disable_table @source_schema = 'schema_name', @source_name = 'table_name';
-EXEC sys.sp_cdc_enable_table @source_schema = 'schema_name', @source_name = 'table_name', @role_name = NULL;
-
-
-
-
-
----
-
-Specific Diagnostic Queries
-
-Check CDC configuration:
-
-SELECT * FROM sys.change_data_capture_tables;
-
-Check for capture job errors:
-
-EXEC sys.sp_cdc_help_jobs;
-
-Verify LSN range:
-
-SELECT * FROM sys.fn_cdc_get_max_lsn();
-
-
-
----
